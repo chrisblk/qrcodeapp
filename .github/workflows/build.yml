@@ -1,0 +1,45 @@
+name: Build QR-App
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22"
+
+      - name: Build binary
+        run: |
+          OS=${{ matrix.os }}
+          ARCH=${{ matrix.arch }}
+
+          if [[ "$OS" == "windows-latest" ]]; then
+            GOOS=windows GOARCH=$ARCH go build -o qrapp-${OS}-${ARCH}.exe -ldflags="-X main.Version=${GITHUB_SHA}"
+          elif [[ "$OS" == "macos-latest" ]]; then
+            GOOS=darwin GOARCH=$ARCH go build -o qrapp-macos-${ARCH} -ldflags="-X main.Version=${GITHUB_SHA}"
+          else
+            GOOS=linux GOARCH=$ARCH go build -o qrapp-linux-${ARCH} -ldflags="-X main.Version=${GITHUB_SHA}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: qrapp-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            qrapp-*.exe
+            qrapp-macos-*
+            qrapp-linux-*

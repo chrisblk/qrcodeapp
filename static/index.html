@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <title>QR-Code Generator</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+        form { margin-bottom: 20px; }
+        input, button { display: block; margin: 10px auto; padding: 8px; width: 80%; }
+        img { margin-top: 20px; border: 2px solid black; max-width: 90%; }
+    </style>
+</head>
+<body>
+<h1>QR-Code Generator</h1>
+
+<p>
+    Version:
+    <span
+            id="version"
+            hx-get="/version"
+            hx-trigger="load"
+            hx-swap="innerHTML"
+            hx-target="#version">
+      Lade...
+    </span>
+</p>
+
+<hr>
+
+<form
+        hx-post="/generate"
+        hx-target="#output"
+        hx-encoding="multipart/form-data"
+>
+    <input name="content" type="text" placeholder="Text oder URL" required />
+    <input name="label" type="text" placeholder="Label" value="SCAN ME" />
+    <input name="logo" type="file" accept="image/png" />
+    <button type="submit">Generieren</button>
+</form>
+
+<div id="output"></div>
+</body>
+</html>
