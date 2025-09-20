@@ -31,17 +31,16 @@ type release struct {
 // Update-Check (GitHub oder lokal)
 // --------------------------------------------------
 func checkForUpdate() {
-	var url string
-
 	if Version == "dev" && !*forceUpdateCheck {
 		fmt.Println("⚠️ Update-Check übersprungen (dev-Version)")
 		return
 	}
 
+	var url string
 	if *localUpdate {
 		url = "http://localhost:9090/latest.json"
 	} else {
-		url = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", "chrisblk", "qrcode")
+		url = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", "chrisblk", "qrcodeapp")
 	}
 
 	resp, err := http.Get(url)
@@ -51,47 +50,95 @@ func checkForUpdate() {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		fmt.Println("❌ Update-Check fehlgeschlagen: HTTP", resp.StatusCode)
+		return
+	}
+
 	var rel release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		fmt.Println("❌ Fehler beim Lesen der Release-Daten:", err)
 		return
 	}
 
-	if rel.TagName != "v"+Version {
-		fmt.Println("➡️ Neue Version gefunden:", rel.TagName)
+	// Semver-Vergleich
+	currentVersion, err := semver.NewVersion(strings.TrimPrefix(Version, "v"))
+	if err != nil {
+		fmt.Println("❌ Ungültige aktuelle Version:", Version)
+		return
+	}
+	latestVersion, err := semver.NewVersion(strings.TrimPrefix(rel.TagName, "v"))
+	if err != nil {
+		fmt.Println("❌ Ungültige Release-Version:", rel.TagName)
+		return
+	}
 
-		target := fmt.Sprintf("qrapp-%s-%s", runtime.GOOS, runtime.GOARCH)
-		var downloadURL string
-		for _, a := range rel.Assets {
-			if a.Name == target {
-				downloadURL = a.BrowserDownloadURL
-				break
-			}
-		}
-
-		if downloadURL == "" {
-			fmt.Println("⚠️ Kein passendes Binary gefunden")
-			return
-		}
-
-		resp, err := http.Get(downloadURL)
-		if err != nil {
-			fmt.Println("❌ Fehler beim Download:", err)
-			return
-		}
-		defer resp.Body.Close()
-
-		if err := update.Apply(resp.Body, update.Options{}); err != nil {
-			fmt.Println("❌ Update fehlgeschlagen:", err)
-			return
-		}
-
-		fmt.Println("✅ Update installiert → Neustart...")
-
-		exec.Command(os.Args[0]).Start()
-		os.Exit(0)
-	} else {
+	if !latestVersion.GreaterThan(currentVersion) {
 		fmt.Println("✅ Version aktuell:", Version)
+		return
+	}
+
+	fmt.Printf("➡️ Neue Version verfügbar: %s (aktuell: %s)\n", latestVersion, currentVersion)
+
+	// Passendes Binary finden
+	target := fmt.Sprintf("qrapp-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		target += ".exe"
+	}
+
+	var downloadURL string
+	for _, a := range rel.Assets {
+		if a.Name == target {
+			downloadURL = a.BrowserDownloadURL
+			break
+		}
+	}
+	if downloadURL == "" {
+		fmt.Println("⚠️ Kein passendes Binary für diese Plattform gefunden")
+		return
+	}
+
+	// Binary herunterladen
+	tmpFile, err := os.CreateTemp("", "qrapp-update-*")
+	if err != nil {
+		fmt.Println("❌ Fehler beim Erstellen der Temp-Datei:", err)
+		return
+	}
+	defer tmpFile.Close()
+
+	resp2, err := http.Get(downloadURL)
+	if err != nil {
+		fmt.Println("❌ Fehler beim Download:", err)
+		return
+	}
+	defer resp2.Body.Close()
+
+	if _, err := io.Copy(tmpFile, resp2.Body); err != nil {
+		fmt.Println("❌ Fehler beim Schreiben des Downloads:", err)
+		return
+	}
+
+	// macOS/Linux: ausführbar machen
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+			fmt.Println("❌ Fehler beim Setzen der Ausführungsrechte:", err)
+			return
+		}
+	}
+
+	// Update anwenden
+	if err := update.Apply(tmpFile, update.Options{}); err != nil {
+		fmt.Println("❌ Update fehlgeschlagen:", err)
+		return
+	}
+
+	fmt.Println("✅ Update installiert → Neustart...")
+
+	// App neu starten
+	if err := exec.Command(os.Args[0]).Start(); err != nil {
+		fmt.Println("❌ Fehler beim Neustart:", err)
+	} else {
+		os.Exit(0)
 	}
 }
 
