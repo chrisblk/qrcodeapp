@@ -54,6 +54,7 @@ jobs:
       - name: Generate latest.json
         run: |
           VERSION=${GITHUB_REF_NAME}
+          ls -lh dist
           echo "{
             \"tag_name\": \"${VERSION}\",
             \"assets\": [" > dist/latest.json
