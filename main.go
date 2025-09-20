@@ -59,9 +59,7 @@ func main() {
 		go buildAndStartLocalUpdateServer()
 	}
 
-	if *localUpdate {
-		checkForUpdate()
-	}
+	checkForUpdate()
 
 	fmt.Println("✅ QR-App läuft, Version:", Version)
 
