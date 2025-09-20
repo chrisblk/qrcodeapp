@@ -1,45 +1,88 @@
-name: Build QR-App
+name: Build and Release QR-App
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    tags:
+      - "v*" # Release wird nur bei Tags wie v1.0.0 erstellt
 
 jobs:
   build:
+    name: Build for ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        arch: [amd64, arm64]
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
       - name: Build binary
         run: |
-          OS=${{ matrix.os }}
-          ARCH=${{ matrix.arch }}
-
-          if [[ "$OS" == "windows-latest" ]]; then
-            GOOS=windows GOARCH=$ARCH go build -o qrapp-${OS}-${ARCH}.exe -ldflags="-X main.Version=${GITHUB_SHA}"
-          elif [[ "$OS" == "macos-latest" ]]; then
-            GOOS=darwin GOARCH=$ARCH go build -o qrapp-macos-${ARCH} -ldflags="-X main.Version=${GITHUB_SHA}"
-          else
-            GOOS=linux GOARCH=$ARCH go build -o qrapp-linux-${ARCH} -ldflags="-X main.Version=${GITHUB_SHA}"
+          mkdir -p dist
+          VERSION=${GITHUB_REF_NAME}
+          OUTPUT="dist/qrapp-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            OUTPUT="${OUTPUT}.exe"
           fi
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $OUTPUT -ldflags "-X main.Version=${VERSION}" .
 
-      - name: Upload artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: qrapp-${{ matrix.os }}-${{ matrix.arch }}
-          path: |
-            qrapp-*.exe
-            qrapp-macos-*
-            qrapp-linux-*
+          name: qrapp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Generate latest.json
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          echo "{
+            \"tag_name\": \"${VERSION}\",
+            \"assets\": [" > dist/latest.json
+
+          first=true
+          for file in dist/*; do
+            if [ -f "$file" ]; then
+              name=$(basename "$file")
+              url="https://github.com/${{ github.repository }}/releases/download/${VERSION}/${name}"
+              if [ "$first" = true ]; then
+                first=false
+              else
+                echo "," >> dist/latest.json
+              fi
+              echo "  {\"browser_download_url\": \"${url}\", \"name\": \"${name}\"}" >> dist/latest.json
+            fi
+          done
+
+          echo "]}" >> dist/latest.json
+          cat dist/latest.json
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
