@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/inconshreveable/go-update"
 )
 
